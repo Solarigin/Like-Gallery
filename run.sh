@@ -52,6 +52,19 @@ fi
 # shellcheck disable=SC1090
 source "$ACTIVATE_SCRIPT"
 
+VENV_PYTHON="$VENV_DIR/bin/python"
+if [ ! -x "$VENV_PYTHON" ]; then
+  VENV_PYTHON="$VENV_DIR/Scripts/python.exe"
+fi
+
+if [ ! -x "$VENV_PYTHON" ]; then
+  echo "[ERROR] 未找到虚拟环境解释器：$VENV_DIR/bin/python 或 $VENV_DIR/Scripts/python.exe" >&2
+  exit 1
+fi
+
+PYTHON_BIN=("$VENV_PYTHON")
+echo "[INFO] 切换到虚拟环境解释器：${PYTHON_BIN[*]}"
+
 "${PYTHON_BIN[@]}" -m pip install --upgrade pip wheel
 "${PYTHON_BIN[@]}" -m pip install -e "$APP_DIR"
 
@@ -75,4 +88,4 @@ print(f"索引文件: {images}")
 PY
 
 echo "[INFO] 启动服务：http://127.0.0.1:${PORT}"
-exec uvicorn sia.server.api:app --host 0.0.0.0 --port "$PORT"
+exec "${PYTHON_BIN[@]}" -m uvicorn sia.server.api:app --host 0.0.0.0 --port "$PORT"

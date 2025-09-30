@@ -56,6 +56,16 @@ if errorlevel 1 (
   goto :exit
 )
 
+if exist "%VENV_DIR%\Scripts\python.exe" (
+  set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
+  set "PYTHON_ARGS="
+  echo [INFO] 切换到虚拟环境解释器: %PYTHON_EXE%
+) else (
+  echo [ERROR] 未找到虚拟环境解释器: %VENV_DIR%\Scripts\python.exe
+  set "EXIT_CODE=1"
+  goto :exit
+)
+
 call :run_python -m pip install --upgrade pip wheel
 if errorlevel 1 goto :pip_error
 call :run_python -m pip install -e "%APP_DIR%"
