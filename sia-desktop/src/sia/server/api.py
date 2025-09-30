@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, HttpUrl, field_validator
 
 from ..core import indexer
@@ -17,6 +19,8 @@ from .downloader import compute_signature, download_strict
 logger = get_logger(__name__)
 
 app = FastAPI(title="Social Image Archiver")
+
+GALLERY_PATH = Path(__file__).resolve().parents[3] / "gallery.html"
 
 FILE_PATTERN = re.compile(r"^(?P<prefix>\d{5})_[^_]+_(?P<index>\d{3})")
 
@@ -43,6 +47,27 @@ async def get_config() -> SIAConfig:
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/", response_class=FileResponse)
+async def gallery_page() -> FileResponse:
+    if not GALLERY_PATH.exists():
+        raise HTTPException(status_code=500, detail="gallery.html 未找到")
+    return FileResponse(GALLERY_PATH, media_type="text/html")
+
+
+@app.get("/images.json")
+async def images_json(config: SIAConfig = Depends(get_config)) -> JSONResponse:
+    path = config.base_dir / "images.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text("[]", encoding="utf-8")
+        return JSONResponse([])
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail="images.json 格式错误") from exc
+    return JSONResponse(data)
 
 
 @app.get("/api/items")
@@ -90,6 +115,16 @@ def _current_max_index(folder: Path) -> int:
             idx = int(match.group("index"))
             max_idx = max(max_idx, idx)
     return max_idx
+
+
+def _resolve_gallery_file(path: str, base_dir: Path) -> Path:
+    target = (base_dir / path).resolve()
+    base = base_dir.resolve()
+    if base not in target.parents and target != base:
+        raise HTTPException(status_code=404, detail="文件不在图库目录内")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return target
 
 
 @app.post("/save")
@@ -141,3 +176,11 @@ async def save_endpoint(request: Request, payload: SavePayload, config: SIAConfi
         session.commit()
     indexer.incremental_update(saved, config=config)
     return {"ok": True, "saved": saved, "duplicates": duplicates}
+
+
+@app.get("/{requested_path:path}")
+async def gallery_assets(requested_path: str, config: SIAConfig = Depends(get_config)) -> FileResponse:
+    if requested_path in {"", "index.html"}:
+        return await gallery_page()
+    file_path = _resolve_gallery_file(requested_path, config.base_dir)
+    return FileResponse(file_path)
