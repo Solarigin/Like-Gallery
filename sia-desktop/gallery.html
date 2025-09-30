@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>X 图库查看器 · Gallery</title>
+<style>
+  :root{
+    --bg:#fbfbfd;
+    --card:#ffffff;
+    --text:#111827;
+    --muted:#6b7280;
+    --line:#e5e7eb;
+    --accent:#0a84ff;
+    --radius:16px;
+    --shadow:0 4px 16px rgba(0,0,0,.06);
+    --cell:180px; /* 缩略图边长（滑块可调） */
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,"PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;
+    color:var(--text);
+    background:var(--bg);
+  }
+  header{
+    position:sticky; top:0; z-index:20;
+    backdrop-filter:saturate(180%) blur(10px);
+    background:rgba(255,255,255,.8);
+    border-bottom:1px solid var(--line);
+  }
+  .toolbar{
+    max-width:1200px; margin:0 auto; display:flex; gap:12px; align-items:center; padding:14px 16px;
+  }
+  .brand{font-weight:600; letter-spacing:.2px; margin-right:8px;}
+  .tool-sep{flex:0 0 1px; height:28px; background:var(--line); margin:0 4px}
+  .input, .btn, .select{
+    height:36px; border:1px solid var(--line); border-radius:12px; background:var(--card);
+    padding:0 12px; display:inline-flex; align-items:center; gap:8px; box-shadow:var(--shadow);
+  }
+  .input input{border:none; outline:none; width:240px; background:transparent; font:inherit; color:inherit}
+  .select select{border:none; outline:none; background:transparent; font:inherit; color:inherit}
+  .btn{cursor:pointer; user-select:none}
+  .btn.primary{background:var(--accent); color:white; border-color:transparent}
+  .btn.ghost{background:transparent; border-color:var(--line); box-shadow:none}
+  .muted{color:var(--muted)}
+  .right{margin-left:auto; display:flex; align-items:center; gap:12px}
+  .slider{display:flex; align-items:center; gap:8px}
+  .slider input[type="range"]{width:140px}
+
+  main{max-width:1200px; margin:16px auto; padding:0 16px 80px}
+  .grid{
+    display:grid; gap:12px;
+    grid-template-columns:repeat(auto-fill, minmax(var(--cell),1fr));
+  }
+  .card{
+    position:relative; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);
+  }
+  .thumb{
+    width:100%; aspect-ratio:1/1; object-fit:cover; display:block; background:#f3f4f6;
+  }
+  .meta{display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-top:1px solid var(--line)}
+  .meta .path{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:75%}
+  .meta .date{color:var(--muted); font-size:12px}
+
+  /* 作者卡 */
+  .author-card .thumb{aspect-ratio:16/10; object-fit:cover}
+  .author-card .meta{display:flex; justify-content:space-between}
+  .author-title{font-weight:600}
+  .chip{font-size:12px; padding:3px 8px; border-radius:999px; background:#f3f4f6; color:#374151; border:1px solid var(--line)}
+
+  /* 作者侧面板 */
+  .panel{
+    position:fixed; inset:0; z-index:40; display:none;
+    background:rgba(0,0,0,.35);
+  }
+  .panel.show{display:block}
+  .panel .sheet{
+    position:absolute; inset:auto 0 0 0; max-height:90%;
+    border-top-left-radius:24px; border-top-right-radius:24px;
+    background:var(--card); box-shadow:0 -12px 30px rgba(0,0,0,.15); border:1px solid var(--line);
+    padding:16px; overflow:auto;
+  }
+  .panel .sheet header{position:sticky; top:0; background:var(--card); border-bottom:1px solid var(--line)}
+  .panel .sheet .header-inner{max-width:1200px; margin:0 auto; padding:12px 8px; display:flex; align-items:center; gap:12px}
+  .panel .sheet main{margin:8px auto 24px; padding:0 8px; max-width:1200px}
+
+  /* 大图查看器 */
+  .lightbox{
+    position:fixed; inset:0; background:rgba(255,255,255,.9); z-index:50; display:none;
+  }
+  .lightbox.show{display:block}
+  .viewer-wrap{position:absolute; inset:56px 0 72px 0; overflow:hidden; cursor:grab}
+  .viewer-wrap:active{cursor:grabbing}
+  .viewer{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(1);
+    will-change:transform;
+  }
+  .viewer img{display:block; max-width:none; user-select:none; -webkit-user-drag:none}
+  .viewer-toolbar{
+    position:absolute; left:0; right:0; bottom:0; height:64px; background:rgba(255,255,255,.85);
+    border-top:1px solid var(--line); display:flex; align-items:center; gap:12px; padding:12px 16px;
+    backdrop-filter:saturate(180%) blur(10px);
+  }
+  .viewer-topbar{
+    position:absolute; left:0; right:0; top:0; height:56px; display:flex; align-items:center; gap:12px; padding:8px 16px;
+    background:rgba(255,255,255,.85); border-bottom:1px solid var(--line); backdrop-filter:saturate(180%) blur(10px);
+  }
+
+  /* 空态 & 提示 */
+  .empty, .tip{
+    max-width:760px; margin:32px auto; padding:18px 20px; border-radius:16px; background:var(--card);
+    border:1px solid var(--line); box-shadow:var(--shadow); color:#374151;
+  }
+  .tip ul{margin:8px 0 0 18px; line-height:1.8}
+  .hidden{display:none}
+  footer{position:fixed; right:12px; bottom:12px; color:#9ca3af; font-size:12px}
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+  <header>
+    <div class="toolbar">
+      <div class="brand">Gallery</div>
+      <div class="input" title="检索路径/文件名/作者">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m21 21-3.5-3.5" stroke="#6b7280" stroke-width="1.6" stroke-linecap="round"/><circle cx="11" cy="11" r="7" stroke="#6b7280" stroke-width="1.6"/></svg>
+        <input id="q" type="search" placeholder="检索：路径 / 文件名 / 作者…" />
+      </div>
+
+      <div class="select" title="作者快速筛选">
+        <select id="authorSelect">
+          <option value="">作者筛选</option>
+        </select>
+      </div>
+
+      <button id="byAuthorBtn" class="btn">按作者排序</button>
+      <div class="tool-sep"></div>
+
+      <div class="right">
+        <div class="muted">缩略图大小</div>
+        <div class="slider">
+          <input id="cellRange" type="range" min="120" max="360" step="2" />
+        </div>
+        <button id="chooseJson" class="btn ghost" title="选择 images.json" style="display:none;">选择 images.json</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="tip" class="tip hidden">
+      <strong>首次使用小提示</strong>
+      <ul>
+        <li>推荐把 <code>gallery.html</code> 与 <code>images.json</code> 放在 <code>C:\Users\Solarigin\Pictures\X\</code>，并用本地静态服务器打开（例如在该目录运行 <code>python -m http.server</code>）。</li>
+        <li>也可在地址栏使用 <code>?json=images.json</code> 或点击右上角「选择 images.json」。</li>
+        <li>作者名默认来自 <code>folder</code> 去掉前缀编号与下划线后的部分（如 <code>00003_090_NV</code> → <code>090_NV</code>）。</li>
+      </ul>
+    </section>
+
+    <section id="grid" class="grid"></section>
+
+    <section id="empty" class="empty hidden">未找到匹配的图片。试试更短的关键词，或清空检索。</section>
+  </main>
+
+  <!-- 作者面板 -->
+  <div id="authorPanel" class="panel" aria-hidden="true">
+    <div class="sheet">
+      <header>
+        <div class="header-inner">
+          <button id="closeAuthor" class="btn">返回</button>
+          <div id="authorTitle" class="author-title"></div>
+          <span id="authorCount" class="chip"></span>
+          <div class="right">
+            <div class="muted">仅显示该作者作品</div>
+          </div>
+        </div>
+      </header>
+      <main>
+        <div id="authorGrid" class="grid"></div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 大图查看器 -->
+  <div id="lightbox" class="lightbox" aria-hidden="true">
+    <div class="viewer-topbar">
+      <button id="lbClose" class="btn">关闭 (Esc)</button>
+      <div id="lbInfo" class="muted"></div>
+      <div class="right">
+        <button id="lbFit" class="btn">适应窗口</button>
+        <button id="lb100" class="btn">100%</button>
+        <a id="lbOpen" class="btn" target="_blank" rel="noopener">在新标签打开</a>
+      </div>
+    </div>
+    <div id="viewerWrap" class="viewer-wrap">
+      <div id="viewer" class="viewer"><img id="viewerImg" alt=""></div>
+    </div>
+    <div class="viewer-toolbar">
+      <div class="muted">缩放</div>
+      <input id="zoomRange" type="range" min="10" max="600" step="1" />
+      <div id="zoomVal" class="chip">100%</div>
+      <div class="right">
+        <div class="muted">滚轮缩放，拖拽平移，方向键翻图</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>© Gallery</footer>
+
+<script>
+(() => {
+  /*** 状态 ***/
+  const state = {
+    items: [],           // 原始 items
+    list: [],            // 附加 author/url 的项
+    byAuthor: new Map(), // author -> items[]
+    authors: [],         // 排序后的作者数组
+    baseHref: '',        // images 基础 URL 前缀
+    mode: 'all',         // 'all' 或 'authors'
+    filterText: '',
+    filterAuthor: '',
+    cell: Number(localStorage.getItem('cell')) || 180,
+    currentIndex: -1,    // 大图当前索引（在当前可见列表中的）
+    currentList: [],     // 当前网格对应的数据（用于大图左右切换）
+  };
+
+  /*** DOM ***/
+  const $grid = document.getElementById('grid');
+  const $empty = document.getElementById('empty');
+  const $tip = document.getElementById('tip');
+  const $q = document.getElementById('q');
+  const $authorSelect = document.getElementById('authorSelect');
+  const $cellRange = document.getElementById('cellRange');
+  const $byAuthorBtn = document.getElementById('byAuthorBtn');
+  const $chooseJson = document.getElementById('chooseJson');
+
+  const $panel = document.getElementById('authorPanel');
+  const $authorGrid = document.getElementById('authorGrid');
+  const $authorTitle = document.getElementById('authorTitle');
+  const $authorCount = document.getElementById('authorCount');
+  const $closeAuthor = document.getElementById('closeAuthor');
+
+  const $lightbox = document.getElementById('lightbox');
+  const $viewerWrap = document.getElementById('viewerWrap');
+  const $viewer = document.getElementById('viewer');
+  const $viewerImg = document.getElementById('viewerImg');
+  const $zoomRange = document.getElementById('zoomRange');
+  const $zoomVal = document.getElementById('zoomVal');
+  const $lbClose = document.getElementById('lbClose');
+  const $lbFit = document.getElementById('lbFit');
+  const $lb100 = document.getElementById('lb100');
+  const $lbOpen = document.getElementById('lbOpen');
+  const $lbInfo = document.getElementById('lbInfo');
+
+  /*** 工具 ***/
+  const fmtDate = ts => {
+    if (!ts) return '';
+    const d = new Date(ts*1000);
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const da = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${da}`;
+  };
+  const getAuthor = folder => String(folder||'').replace(/^\d+_?/, '');
+  const urlJoin = (base, rel) => {
+    try { return new URL(rel, base).href; } catch { return rel; }
+  };
+  const debounce = (fn, wait=200) => {
+    let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), wait); };
+  };
+
+  /*** 加载 images.json ***/
+  async function tryLoadJSON(){
+    const params = new URLSearchParams(location.search);
+    const candidates = [];
+    if (params.get('json')) candidates.push(params.get('json'));
+    candidates.push('images.json'); // 同目录默认
+    for (const c of candidates){
+      try{
+        const res = await fetch(c, {cache:'no-cache'});
+        if (!res.ok) throw new Error('not ok');
+        const data = await res.json();
+        const base = new URL(c, location.href);
+        state.baseHref = base.href.replace(/[^/]+$/, ''); // 目录作为基准
+        return data;
+      }catch(e){}
+    }
+    return null;
+  }
+
+  /*** 索引构建 ***/
+  function buildIndex(items){
+    state.items = items || [];
+    state.list = state.items.map(it=>{
+      const author = getAuthor(it.folder);
+      const url = urlJoin(state.baseHref, String(it.path||'').replace(/\\/g,'/'));
+      return {...it, author, url};
+    });
+    state.byAuthor.clear();
+    state.list.forEach(it=>{
+      if (!state.byAuthor.has(it.author)) state.byAuthor.set(it.author, []);
+      state.byAuthor.get(it.author).push(it);
+    });
+    // 作者内按文件名排序，带 _001 优先
+    for (const arr of state.byAuthor.values()){
+      arr.sort((a,b)=>{
+        const a001 = /_001\./i.test(a.name)? -1 : 0;
+        const b001 = /_001\./i.test(b.name)? -1 : 0;
+        if (a001!==b001) return a001 - b001;
+        return a.name.localeCompare(b.name, 'zh');
+      });
+    }
+    // 作者列表按名称排序
+    state.authors = Array.from(state.byAuthor.keys()).sort((a,b)=>a.localeCompare(b,'zh'));
+    // 填充作者下拉
+    fillAuthorSelect();
+  }
+
+  function fillAuthorSelect(){
+    $authorSelect.innerHTML = `<option value="">作者筛选</option>` + state.authors.map(a=>`<option value="${html(a)}">${html(a)}</option>`).join('');
+  }
+
+  /*** 渲染：全部图片网格 ***/
+  function renderAll(){
+    state.mode = 'all';
+    $byAuthorBtn.textContent = '按作者排序';
+    applyCell();
+    const q = state.filterText.trim().toLowerCase();
+    const fa = state.filterAuthor;
+    let list = state.list.slice().sort((a,b)=>b.mtime - a.mtime); // 默认按时间降序
+    if (q){
+      list = list.filter(it=>{
+        const hay = (it.path+' '+it.name+' '+it.folder+' '+it.author).toLowerCase();
+        return q.split(/\s+/).every(tok => hay.includes(tok));
+      });
+    }
+    if (fa){
+      list = list.filter(it=>it.author===fa);
+    }
+    state.currentList = list;
+    $grid.innerHTML = list.map((it,idx)=>cardHTML(it, idx)).join('');
+    attachThumbHandlers($grid, list);
+    toggleEmpty(list.length===0);
+  }
+
+  /*** 渲染：作者视图（作者卡片） ***/
+  function renderAuthors(){
+    state.mode = 'authors';
+    $byAuthorBtn.textContent = '返回全部';
+    applyCell();
+    const rows = state.authors.map(author=>{
+      const arr = state.byAuthor.get(author)||[];
+      const thumb = pickAuthorThumb(arr);
+      return authorCardHTML(author, thumb?.url, arr.length);
+    }).join('');
+    $grid.innerHTML = rows;
+    // 作者卡点击
+    $grid.querySelectorAll('[data-author-card]').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const author = el.getAttribute('data-author-card');
+        openAuthorPanel(author);
+      });
+    });
+    toggleEmpty(state.authors.length===0);
+  }
+
+  function pickAuthorThumb(arr){
+    // 优先 folder_001.*，否则取第一张
+    const t = arr.find(x=>/_001\./i.test(x.name)) || arr[0];
+    return t;
+  }
+
+  /*** 作者面板 ***/
+  function openAuthorPanel(author){
+    const arr = (state.byAuthor.get(author)||[]).slice();
+    $authorTitle.textContent = author;
+    $authorCount.textContent = `${arr.length} 张`;
+    $authorGrid.innerHTML = arr.map((it,idx)=>cardHTML(it, idx, true)).join('');
+    attachThumbHandlers($authorGrid, arr);
+    $panel.classList.add('show');
+    $panel.setAttribute('aria-hidden','false');
+  }
+  function closeAuthorPanel(){
+    $panel.classList.remove('show');
+    $panel.setAttribute('aria-hidden','true');
+  }
+
+  /*** 卡片模板 ***/
+  function cardHTML(it, idx, compact=false){
+    const date = fmtDate(it.mtime);
+    return `
+      <article class="card ${compact?'compact':''}" data-index="${idx}">
+        <img class="thumb" src="${html(it.url)}" alt="${html(it.name)}" loading="lazy" />
+        <div class="meta">
+          <div class="path" title="${html(it.path)}">${compact?html(it.name):html(it.path)}</div>
+          <div class="date">${date?date:''}</div>
+        </div>
+      </article>`;
+  }
+  function authorCardHTML(author, thumbUrl, count){
+    return `
+      <article class="card author-card" data-author-card="${html(author)}">
+        <img class="thumb" src="${thumbUrl?html(thumbUrl):''}" alt="${html(author)}" loading="lazy" />
+        <div class="meta">
+          <div class="author-title" title="${html(author)}">${html(author)}</div>
+          <div class="chip">${count}</div>
+        </div>
+      </article>`;
+  }
+
+  function attachThumbHandlers(root, list){
+    root.querySelectorAll('.card:not(.author-card)').forEach((el, i)=>{
+      el.addEventListener('click', ()=>{
+        openLightbox(list, i);
+      });
+    });
+  }
+
+  function toggleEmpty(isEmpty){
+    $empty.classList.toggle('hidden', !isEmpty);
+  }
+
+  /*** 网格缩略图大小 ***/
+  function applyCell(){
+    const v = state.cell;
+    document.documentElement.style.setProperty('--cell', v+'px');
+    $cellRange.value = v;
+  }
+
+  /*** 大图查看器：缩放/平移/导航 ***/
+  const viewer = {
+    scale: 1,
+    baseScale: 1, // 适应窗口的 scale
+    imgW: 0, imgH: 0,
+    x: 0, y: 0,
+    dragging: false,
+    startX: 0, startY: 0,
+    list: [],
+    idx: 0,
+  };
+
+  function openLightbox(list, idx){
+    viewer.list = list;
+    viewer.idx = idx;
+    const it = list[idx];
+    showImage(it);
+    $lightbox.classList.add('show');
+    $lightbox.setAttribute('aria-hidden','false');
+  }
+  function closeLightbox(){
+    $lightbox.classList.remove('show');
+    $lightbox.setAttribute('aria-hidden','true');
+  }
+
+  function showImage(it){
+    // 先重置
+    viewer.scale = 1; viewer.baseScale = 1; viewer.x = 0; viewer.y = 0;
+    $viewer.style.transform = `translate(-50%,-50%) scale(1)`;
+    $viewerImg.src = it.url;
+    $viewerImg.alt = it.name;
+    $lbOpen.href = it.url;
+    $lbInfo.textContent = `${it.author} · ${it.name}`;
+    // 等图片尺寸
+    $viewerImg.onload = () => {
+      viewer.imgW = $viewerImg.naturalWidth||$viewerImg.width;
+      viewer.imgH = $viewerImg.naturalHeight||$viewerImg.height;
+      fitToWindow();
+    };
+  }
+
+  function fitToWindow(){
+    const box = $viewerWrap.getBoundingClientRect();
+    if (!viewer.imgW || !viewer.imgH) return;
+    const sx = box.width / viewer.imgW;
+    const sy = box.height / viewer.imgH;
+    viewer.baseScale = Math.min(sx, sy);
+    setScale(viewer.baseScale);
+    viewer.x = 0; viewer.y = 0;
+    applyTransform();
+  }
+
+  function setScale(s){
+    viewer.scale = s;
+    $zoomRange.value = Math.round(s*100);
+    $zoomVal.textContent = Math.round(s*100) + '%';
+  }
+
+  function applyTransform(){
+    const t = `translate(calc(-50% + ${viewer.x}px), calc(-50% + ${viewer.y}px)) scale(${viewer.scale})`;
+    $viewer.style.transform = t;
+  }
+
+  // 滚轮缩放（以鼠标位置为中心）
+  $viewerWrap.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    if (!$lightbox.classList.contains('show')) return;
+    const delta = -e.deltaY;
+    const factor = Math.exp(delta * 0.001); // 平滑无级
+    const prev = viewer.scale;
+    let next = prev * factor;
+    next = Math.max(0.1, Math.min(6, next));
+    // 以指针位置实现“看哪里放大哪里”
+    const rect = $viewerWrap.getBoundingClientRect();
+    const cx = e.clientX - rect.left - rect.width/2;
+    const cy = e.clientY - rect.top  - rect.height/2;
+    viewer.x = cx - (cx - viewer.x) * (next/prev);
+    viewer.y = cy - (cy - viewer.y) * (next/prev);
+    setScale(next);
+    applyTransform();
+  }, {passive:false});
+
+  // 拖拽平移
+  $viewerWrap.addEventListener('pointerdown', (e)=>{
+    viewer.dragging = true;
+    viewer.startX = e.clientX - viewer.x;
+    viewer.startY = e.clientY - viewer.y;
+    $viewerWrap.setPointerCapture(e.pointerId);
+  });
+  $viewerWrap.addEventListener('pointermove', (e)=>{
+    if (!viewer.dragging) return;
+    viewer.x = e.clientX - viewer.startX;
+    viewer.y = e.clientY - viewer.startY;
+    applyTransform();
+  });
+  $viewerWrap.addEventListener('pointerup', (e)=>{
+    viewer.dragging = false;
+    $viewerWrap.releasePointerCapture(e.pointerId);
+  });
+
+  // 复位/快捷键
+  $lbFit.addEventListener('click', fitToWindow);
+  $lb100.addEventListener('click', ()=>{ setScale(1); applyTransform(); });
+  $lbClose.addEventListener('click', closeLightbox);
+  $zoomRange.addEventListener('input', ()=>{
+    setScale(Number($zoomRange.value)/100);
+    applyTransform();
+  });
+  $viewerWrap.addEventListener('dblclick', fitToWindow);
+  window.addEventListener('keydown', (e)=>{
+    if (!$lightbox.classList.contains('show')) return;
+    if (e.key==='Escape'){ closeLightbox(); }
+    if (e.key==='ArrowRight'){ nav(1); }
+    if (e.key==='ArrowLeft'){ nav(-1); }
+  });
+  function nav(step){
+    const list = viewer.list;
+    if (!list || !list.length) return;
+    viewer.idx = (viewer.idx + step + list.length) % list.length;
+    showImage(list[viewer.idx]);
+  }
+
+  /*** 交互 ***/
+  $q.addEventListener('input', debounce(()=>{
+    state.filterText = $q.value||'';
+    if (state.mode==='authors') renderAuthors(); else renderAll();
+  }, 150));
+
+  $authorSelect.addEventListener('change', ()=>{
+    state.filterAuthor = $authorSelect.value||'';
+    if (state.mode==='authors') renderAuthors(); else renderAll();
+  });
+
+  $byAuthorBtn.addEventListener('click', ()=>{
+    if (state.mode==='all'){ renderAuthors(); history.replaceState(null,'', setParam('mode','authors')); }
+    else { renderAll(); history.replaceState(null,'', setParam('mode','all')); }
+  });
+
+  $cellRange.addEventListener('input', ()=>{
+    state.cell = Number($cellRange.value);
+    localStorage.setItem('cell', state.cell);
+    applyCell();
+  });
+
+  $chooseJson.addEventListener('click', async ()=>{
+    // 仅用于帮助用户定位 JSON 路径（浏览器无法跨目录读取图片，仍建议放同目录并用本地服务器）
+    try{
+      const [handle] = await window.showOpenFilePicker({types:[{description:'JSON', accept:{'application/json':['.json']}}]});
+      const file = await handle.getFile();
+      const text = await file.text();
+      const data = JSON.parse(text);
+      // 假设 gallery.html 与 images.json、图片在同目录树：从 file.name 无法知道目录，给出提示
+      buildIndex(data);
+      $tip.classList.remove('hidden');
+      renderAll();
+    }catch(e){}
+  });
+
+  $panel.addEventListener('click', (e)=>{ if (e.target === $panel) closeAuthorPanel(); });
+  $closeAuthor.addEventListener('click', closeAuthorPanel);
+
+  /*** URL 模式初始化 ***/
+  function getParam(key){ return new URLSearchParams(location.search).get(key); }
+  function setParam(key,val){
+    const ps = new URLSearchParams(location.search);
+    if (val==null) ps.delete(key); else ps.set(key,val);
+    const s = location.pathname + '?' + ps.toString();
+    return s;
+  }
+
+  /*** HTML 转义 ***/
+  function html(s){ return String(s??'').replace(/[&<>"'`]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c])); }
+
+  /*** 启动 ***/
+  (async function init(){
+    // 初始 cell
+    applyCell();
+    // 读取 JSON
+    const data = await tryLoadJSON();
+    if (!data){
+      // 提示与选择按钮
+      $tip.classList.remove('hidden');
+      $chooseJson.style.display = 'inline-flex';
+    }else{
+      buildIndex(data);
+      const mode = getParam('mode') || 'all';
+      if (mode==='authors') renderAuthors(); else renderAll();
+    }
+  })();
+})();
+</script>
+</body>
+</html>
