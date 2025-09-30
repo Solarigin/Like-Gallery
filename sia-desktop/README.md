@@ -13,6 +13,18 @@ Social Image Archiver 将原有的自动编号与图库原型升级为跨平台�
 
 ## 快速开始
 
+### 一键部署（推荐）
+
+在仓库根目录执行脚本即可创建虚拟环境、安装依赖并启动本地 Web 服务：
+
+```bash
+./run.sh
+```
+
+浏览器访问 `http://127.0.0.1:18080`（端口可在配置中调整）即可打开图库页面。
+
+### 手动步骤
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
