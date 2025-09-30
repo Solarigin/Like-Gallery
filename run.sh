@@ -16,8 +16,17 @@ if [ ! -d "$VENV_DIR" ]; then
   "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
 
+ACTIVATE_SCRIPT="$VENV_DIR/bin/activate"
+if [ ! -f "$ACTIVATE_SCRIPT" ]; then
+  ACTIVATE_SCRIPT="$VENV_DIR/Scripts/activate"
+  if [ ! -f "$ACTIVATE_SCRIPT" ]; then
+    echo "[ERROR] 未找到虚拟环境激活脚本：$VENV_DIR/bin/activate 或 $VENV_DIR/Scripts/activate" >&2
+    exit 1
+  fi
+fi
+
 # shellcheck disable=SC1090
-source "$VENV_DIR/bin/activate"
+source "$ACTIVATE_SCRIPT"
 
 python -m pip install --upgrade pip wheel
 python -m pip install -e "$APP_DIR"
